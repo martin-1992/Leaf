@@ -7,22 +7,66 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * 双buffer
+ * 双 buffer，保证 DB 出问题，buffer 还可以正常发 ID 号码
  */
 public class SegmentBuffer {
+    /**
+     * 业务 key
+     */
     private String key;
-    private Segment[] segments; //双buffer
-    private volatile int currentPos; //当前的使用的segment的index
-    private volatile boolean nextReady; //下一个segment是否处于可切换状态
-    private volatile boolean initOk; //是否初始化完成
-    private final AtomicBoolean threadRunning; //线程是否在运行中
+
+    /**
+     * 双 buffer
+     */
+    private Segment[] segments;
+
+    /**
+     * 当前的使用的 segment 的 index，即使用哪个 buffer
+     */
+    private volatile int currentPos;
+
+    /**
+     * 下一个 segment 是否处于可切换状态
+     */
+    private volatile boolean nextReady;
+
+    /**
+     * 是否初始化完成
+     */
+    private volatile boolean initOk;
+
+    /**
+     * 线程是否在运行中
+     */
+    private final AtomicBoolean threadRunning;
+
+    /**
+     * 读写锁
+     */
     private final ReadWriteLock lock;
 
+    /**
+     * 步长
+     */
     private volatile int step;
+
+    /**
+     * 最小步长
+     */
     private volatile int minStep;
+
+    /**
+     * 更新时间
+     */
     private volatile long updateTimestamp;
 
+    /**
+     * 构造函数，初始 Segment 数组为 2，即双 buffer
+     */
     public SegmentBuffer() {
+        // 创建双 buffer，另一个 buffer 会使用线程池异步调用。当前
+        // buffer 的号码发完，就会调用另外一个 buffer 来发号，保证
+        // 有一个 buffer 准备好发号
         segments = new Segment[]{new Segment(this), new Segment(this)};
         currentPos = 0;
         nextReady = false;

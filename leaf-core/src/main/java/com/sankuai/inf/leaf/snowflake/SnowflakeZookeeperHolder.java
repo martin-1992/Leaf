@@ -59,14 +59,14 @@ public class SnowflakeZookeeperHolder {
      * - 基于配置信息，创建 zookeeper 的连接实例；
      * - 检查根节点 forever 是否存在；
      * - 不存在根节点；
-     *     1. 创建根节点 forever，为第一次启动，创建永久顺序节点, 并把节点数据放入 value；
+     *     1. 创建根节点 forever，为第一次启动，创建永久顺序节点 workerID（zookeeper 顺序节点生成的 int 类型的 ID 号）, 并把节点数据放入 value；
      *     2. 持久化，将该端口对应的 workerID 写入文件系统中，重启可获取该 workerID，保证正常启动；
-     *     3. 创建节点，使用一个核心线程为 1 的线程池，该线程每 3s 将本机数据上报给根节点 forever，数据为由 ip、端口、本机时间戳组成的 json
+     *     3. 使用一个核心线程为 1 的线程池，该线程每 3s 将本机数据上报给根节点 forever，数据为由 ip、端口、本机时间戳组成的 json
      * - 存在根节点；
      *     1. 获取根节点 forever 的所有子节点，存入 Map 中；
      *     2. 根据监听地址，从 Map 中获取节点；
-     *     3. 监听地址有节点，则判断该节点的时间是否小于最后一次上报的时间，创建临时节点，workderId 持久化；
-     *     4. 监听地址没有节点，无需判断节点时间，创建永久节点，workderId 持久化。
+     *     3. 监听地址有节点，则判断该节点的时间是否小于最后一次上报的时间，创建临时节点，workerId 持久化；
+     *     4. 监听地址没有节点，无需判断节点时间，创建永久节点，workerId 持久化。
      *
      * @return
      */
@@ -110,9 +110,10 @@ public class SnowflakeZookeeperHolder {
                 if (workerid != null) {
                     // 有自己的节点, zk_AddressNode = ip: port
                     zk_AddressNode = PATH_FOREVER + "/" + realNode.get(listenAddress);
-                    // 启动 worder 时使用会使用
+                    // 启动 worker 时使用会使用
                     workerID = workerid;
-                    // 先检查，该节点的时间不能小于最后一次上报的时间
+                    // 已经存在节点，则先检查，当前节点的时间是否小于最近一次上报时间，
+                    // 是则表明机器时间已经回拨了，于是服务启动失败，抛出异常
                     if (!checkInitTimeStamp(curator, zk_AddressNode))
                         throw new CheckLastTimeException("init timestamp check error,forever node timestamp gt this node time");
                     // 准备创建临时节点
@@ -176,7 +177,9 @@ public class SnowflakeZookeeperHolder {
     }
 
     /**
-     * 检查该节点
+     * 检查该节点，用于判断机器时间有没回拨，如果当前时间小于该
+     * 节点上报的最近一次时间，则认为机器时间已经回拨
+     *
      * @param curator
      * @param zk_AddressNode
      * @return
@@ -187,7 +190,7 @@ public class SnowflakeZookeeperHolder {
         byte[] bytes = curator.getData().forPath(zk_AddressNode);
         // 将节点数据转为 endPoint 对象
         Endpoint endPoint = deBuildData(new String(bytes));
-        // 该节点的时间不能小于最后一次上报的时间
+        // 该节点的当前时间不能小于最后一次上报的时间
         return !(endPoint.getTimestamp() > System.currentTimeMillis());
     }
 
@@ -209,6 +212,7 @@ public class SnowflakeZookeeperHolder {
 
     private void updateNewData(CuratorFramework curator, String path) {
         try {
+            // 当前系统时间小于最近一次更新时间，则返回
             if (System.currentTimeMillis() < lastUpdateTime) {
                 return;
             }

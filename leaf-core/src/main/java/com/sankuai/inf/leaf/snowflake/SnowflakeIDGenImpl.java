@@ -56,18 +56,25 @@ public class SnowflakeIDGenImpl implements IDGen {
         Preconditions.checkArgument(workerId >= 0 && workerId <= maxWorkerId, "workerID must gte 0 and lte 1023");
     }
 
+    /**
+     * 获取 ID 时，先判断机器时间有没回拨
+     *
+     * @param key
+     * @return
+     */
     @Override
     public synchronized Result get(String key) {
         long timestamp = timeGen();
         if (timestamp < lastTimestamp) {
-            // 当前时间小于 lastTimestamp，计算偏移量
+            // 当前时间小于最近一次上报时间 lastTimestamp，发生回拨，计算时间差
             long offset = lastTimestamp - timestamp;
             if (offset <= 5) {
                 try {
-                    // 偏移量除以 2，等待
+                    // 时间差小于等于 5 秒，则等待两倍时间，<< 1 表示左移一位，
+                    // 即乘以 2，使用位运算速度更快
                     wait(offset << 1);
                     timestamp = timeGen();
-                    // 当前时间还是小于 lastTimestamp，写入异常
+                    // 再次判断当前时间是否小于最近一次上报时间 lastTimestamp，是则写入异常
                     if (timestamp < lastTimestamp) {
                         return new Result(-1, Status.EXCEPTION);
                     }
@@ -76,25 +83,29 @@ public class SnowflakeIDGenImpl implements IDGen {
                     return new Result(-2, Status.EXCEPTION);
                 }
             } else {
-                // 偏移量大于 5，异常
+                // 时间差大于 5 秒，则不等待当前时间超过最近一次上报时间，直接写入异常
                 return new Result(-3, Status.EXCEPTION);
             }
         }
+        // 最近一次上报时间等于当前时间
         if (lastTimestamp == timestamp) {
             // 如果大于 sequenceMask，则是求余数
             sequence = (sequence + 1) & sequenceMask;
             if (sequence == 0) {
-                //seq 为 0 的时候表示是下一毫秒时间开始对 seq 做随机
+                // seq 为 0 的时候是初始值，即第一次开始，对
+                // seq 做随机，sequence 用于生成 ID 值
                 sequence = RANDOM.nextInt(100);
                 // 获取大于 lastTimestamp 的当前时间
                 timestamp = tilNextMillis(lastTimestamp);
             }
         } else {
-            // 如果是新的 ms 开始
+            // 当前时间大于最近一次上报时间，随机生成 100 以内的 sequence
             sequence = RANDOM.nextInt(100);
         }
-        // 将当前赋值为 lastTimestamp
+        // 执行到这里，表明当前时间大于最近一次上报时间，将当前时间赋值
+        // 为 lastTimestamp，用于上报数据到 zookeeper
         lastTimestamp = timestamp;
+        // 生成 ID 值
         long id = ((timestamp - twepoch) << timestampLeftShift) | (workerId << workerIdShift) | sequence;
         return new Result(id, Status.SUCCESS);
 
@@ -102,6 +113,7 @@ public class SnowflakeIDGenImpl implements IDGen {
 
     /**
      * 返回大于 lastTimestamp 的当前时间
+     *
      * @param lastTimestamp
      * @return
      */
@@ -113,6 +125,10 @@ public class SnowflakeIDGenImpl implements IDGen {
         return timestamp;
     }
 
+    /**
+     * 方法保护，防止篡改
+     * @return
+     */
     protected long timeGen() {
         return System.currentTimeMillis();
     }

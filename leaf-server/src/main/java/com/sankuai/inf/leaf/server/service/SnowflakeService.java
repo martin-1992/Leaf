@@ -44,6 +44,13 @@ public class SnowflakeService {
             logger.info("Zero ID Gen Service Init Successfully");
         }
     }
+
+    /**
+     * 获取 ID 时会先判断机器时间是否发生回拨
+     *
+     * @param key
+     * @return
+     */
     public Result getId(String key) {
         return idGen.get(key);
     }

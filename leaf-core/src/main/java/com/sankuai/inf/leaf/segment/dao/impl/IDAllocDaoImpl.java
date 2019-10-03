@@ -14,6 +14,9 @@ import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import javax.sql.DataSource;
 import java.util.List;
 
+/**
+ * 调用数据库，用于查询 key、和更新 key 的发号配置
+ */
 public class IDAllocDaoImpl implements IDAllocDao {
 
     SqlSessionFactory sqlSessionFactory;
@@ -31,7 +34,7 @@ public class IDAllocDaoImpl implements IDAllocDao {
     }
 
     /**
-     * 调用 IDAllocMapper#getAllLeafAllocs，索取所有业务 key 对应的发号配置
+     * 调用 IDAllocMapper#getAllLeafAllocs，获取所有业务 key 对应的发号配置
      * @return
      */
     @Override

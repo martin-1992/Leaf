@@ -24,12 +24,23 @@ public class LeafController {
     @Autowired
     SnowflakeService snowflakeService;
 
+    /**
+     * 根据业务 key 获取 ID
+     * @param key
+     * @return
+     */
     @RequestMapping(value = "/api/segment/get/{key}")
     public String getSegmentID(@PathVariable("key") String key) {
         // key 为数据库对应的 biz_tag
         return get(key, segmentService.getId(key));
     }
 
+    /**
+     * 获取 snowflake 算法生成的 ID
+     *
+     * @param key
+     * @return
+     */
     @RequestMapping(value = "/api/snowflake/get/{key}")
     public String getSnowflakeID(@PathVariable("key") String key) {
         return get(key, snowflakeService.getId(key));
