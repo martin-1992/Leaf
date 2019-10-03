@@ -1,18 +1,39 @@
-
 ### 介绍
-　　美团的 Leaf 框架有两种 ID 生成模式：号段模式、snowflake 模式。
+　　本项目为美团的 Leaf 框架的中文注释版，包含 Leaf 框架的代码注释及笔记，美团 Leaf 有两种 ID 生成模式：号段模式、snowflake 模式。
 
-### 号段模式
+### [号段模式](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/README.md)
 　　低位趋势增长，高可用，采用从数据库获取发号的起始 ID 值、最大 ID 值，发号是在本机进行，即使数据库宕机，也能保证一段时间内正常发号，ID 可计算，不适用于订单 ID 生成场景。
+  
+- 先判断初始化是否成功，在 [SegmentIDGenImpl#init](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23init.md) 方法中初始化包括将数据库中的业务 key 添加到缓存中、删去缓存中没用的业务 key 和创建一个线程定时添加新的业务 key 到缓存中；
+- 判断缓存（多线程下使用 ConcurrentHashMap）是否包含该业务 key，不包含则抛出异常；
+- 使用双重检查锁，检查 SegmentBuffer 是否已用构造函数创建，并进行零值初始化；
+- 调用 [updateSegmentFromDb](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23updateSegmentFromDb.md)，从数据库配置更新 buffer 的当前 ID 值、最大 ID 值，以及动态调整步长；
+- 调用 [getIdFromSegmentBuffer](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23getIdFromSegmentBuffer.md)，发号和准备另一个 buffer，当前 buffer 发号完了，就切换到另一个 buffer 进行发号。
 
-![avatar](photo_2.png)
+![avatar](/notes/photo_2.png)
 
-### snowflake 模式
-　　完全分布式，ID 不可计算，可适用于订单 ID 生成场景。
+### [snowflake 模式](https://github.com/martin-1992/Leaf/blob/master/notes/snowflake/README.md)
+　　完全分布式，ID 不可计算，可适用于订单 ID 生成场景。<br />
 
-![avatar](photo_1.png)
+- 创建对象 SnowflakeZookeeperHolder，包含 IP、端口、zookeeper 地址；
+- 核心是调用该对象 SnowflakeZookeeperHolder 的初始化 init 方法。
+    1. 每当 leaf-snowflake 服务启动后，都会创建一个 zookeeper 连接实例，连接到 zookeeper，然后先检查 zookeeper 的根节点是否创建；
+    2. 没则创建父节点 leaf_forever，同时在父节点下创建一个永久顺序节点 workerId（ID 号是顺序生成的），为本次连接的 leaf-snowflake 所属 ID 号，将 workerId 持久化到本地，重启时可直接获取；
+    3. 有创建父节点的情况下，则先获取该父节点下的所有子节点存储到 Map 中，然后根据该 leaf-snowflake 服务的监听地址，判断 map 中是否也有注册的 workerId，有则取回该 workerId，启动服务。没则在父节点下创建一个永久顺序节点 workerId，启动服务。
+
+![avatar](/notes/photo_1.png)
+
+#### [解决机器时间回拨问题](https://github.com/martin-1992/Leaf/blob/master/notes/snowflake/%E8%A7%A3%E5%86%B3%E6%9C%BA%E5%99%A8%E6%97%B6%E9%97%B4%E5%9B%9E%E6%8B%A8%E9%97%AE%E9%A2%98.md)
+　　snowflake 算法的第 2- 42 位为相对时间戳，依赖时间来产生 ID 的，如果机器时间发生回拨，则可能会发出重复的 ID 号，所以在发 ID 号前需检查机器时间有没回拨，有三种检查：
+
+- 当 leaf-snowflake 服务连接 zookeeper 时，发现父节点已存在，同时在父节点下找到该服务的子节点和 workerId，则获取该 workerId，调用 checkInitTimeStamp 方法，检查当前服务的机器时间是否小于该节点最近一次上报时间，是则抛出异常；
+- 在获取 ID 时会先判断机器时间是否发生回拨，检查服务的机器时间是否小于该节点最近一次上报时间；
+- 如果是新服务节点，直接创建持久节点 leaf_forever/{self} 并写入自身系统时间，接下来综合对比其余 Leaf 节点的系统时间来判断自身系统时间是否准确，具体做法是取 leaf_temporary 下的所有临时节点（所有运行中的 Leaf-snowflake 节点）的服务 IP：Port，然后通过 RPC 请求得到所有节点的系统时间，计算 sum(time)/ nodeSize（注意，这段来自[美团的原文](https://tech.meituan.com/2017/04/21/mt-leaf.html)，在代码里没找到该实现方法）。
+    1. 若 abs ( 系统时间 - sum(time) / nodeSize ) < 阈值，认为当前系统时间准确，正常启动服务，同时写临时节点 leaf_temporary/{self} 维持租约；
+    2. 否则认为本机系统时间发生大步长偏移，启动失败并报警。
 
 
-```python
+### reference
 
-```
+- [Leaf：美团分布式ID生成服务开源](https://tech.meituan.com/2019/03/07/open-source-project-leaf.html)；
+- [Leaf——美团点评分布式ID生成系统](https://tech.meituan.com/2017/04/21/mt-leaf.html)
