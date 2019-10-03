@@ -21,7 +21,7 @@
 
 ### SegmentIDGenImpl#updateCacheFromDb
 
-- 为数据库中每个业务 key（tag），初始建立双 buffer（双 buffer 用于存放 ID 号），并添加到缓存 map 中；
+- 为数据库中每个业务 key（tag），初始建立双 buffer（buffer 用于发号），并添加到缓存 map 中；
 - 遍历检查，将不存在于数据库的缓存业务 key 删去。
 
 ```java
