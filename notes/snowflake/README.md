@@ -52,10 +52,10 @@
     }
 ```
 
-### SnowflakeIDGenImpl
+### [SnowflakeIDGenImpl#init](https://github.com/martin-1992/Leaf/blob/master/notes/snowflake/SnowflakeZookeeperHolder%23init.md)
 
 - 创建对象 SnowflakeZookeeperHolder，包含 IP、端口、zookeeper 地址；
-- 核心是调用该对象 SnowflakeZookeeperHolder 的初始化 [init](https://github.com/martin-1992/Leaf/blob/master/notes/snowflake/SnowflakeZookeeperHolder%23init.md) 方法。
+- 核心是调用该对象 SnowflakeZookeeperHolder 的初始化 init 方法。
     1. 每当 leaf-snowflake 服务启动后，都会创建一个 zookeeper 连接实例，连接到 zookeeper，然后先检查 zookeeper 的根节点是否创建；
     2. 没则创建父节点 leaf_forever，同时在父节点下创建一个永久顺序节点 workerId（ID 号是顺序生成的），为本次连接的 leaf-snowflake 所属 ID 号，将 workerId 持久化到本地，重启时可直接获取；
     3. 有创建父节点的情况下，则先获取该父节点下的所有子节点存储到 Map 中，然后根据该 leaf-snowflake 服务的监听地址，判断 map 中是否也有注册的 workerId，有则取回该 workerId，启动服务。没则在父节点下创建一个永久顺序节点 workerId，启动服务。
