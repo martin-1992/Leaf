@@ -7,7 +7,7 @@
 ![avatar](photo_1.png)
 
 ### SegmentService
-　　主要是解析配置文件，创建数据库连接池以及创建 ID 生成器 [SegmentIDGenImpl]()。
+　　主要是解析配置文件，创建数据库连接池以及创建 ID 生成器 [SegmentIDGenImpl](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23init.md)。
 
 - 载入配置文件 leaf.properties；
 - 解析配置文件，判断是否开启号段模式，不开启则 ID 返回为 0；
