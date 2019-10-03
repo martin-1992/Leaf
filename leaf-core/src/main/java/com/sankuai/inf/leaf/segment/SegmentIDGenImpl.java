@@ -164,7 +164,7 @@ public class SegmentIDGenImpl implements IDGen {
         if (!initOK) {
             return new Result(EXCEPTION_ID_IDCACHE_INIT_FALSE, Status.EXCEPTION);
         }
-        // 再如果判断该缓存是否包含业务 key
+        // 如果该缓存包含业务 key
         if (cache.containsKey(key)) {
             SegmentBuffer buffer = cache.get(key);
             // 使用双重检查锁，检查 SegmentBuffer 是否已用构造函数创建，并进行零值初始化
@@ -172,7 +172,7 @@ public class SegmentIDGenImpl implements IDGen {
                 synchronized (buffer) {
                     if (!buffer.isInitOk()) {
                         try {
-
+                            // 从数据库配置更新 buffer 的当前 ID 值、最大 ID 值，以及动态调整步长
                             updateSegmentFromDb(key, buffer.getCurrent());
                             logger.info("Init buffer. Update leafkey {} {} from db", key, buffer.getCurrent());
                             buffer.setInitOk(true);
@@ -182,15 +182,17 @@ public class SegmentIDGenImpl implements IDGen {
                     }
                 }
             }
-            //
+            // 发号和准备另一个 buffer，当前 buffer 发号完了，就切换到另一个 buffer 进行发号
             return getIdFromSegmentBuffer(cache.get(key));
         }
-        //
+        // 缓存不包含业务 key，返回异常错误
         return new Result(EXCEPTION_ID_KEY_NOT_EXISTS, Status.EXCEPTION);
     }
 
     /**
-     * 配置 buffer 的当前 ID 值、最大 ID 值和步长
+     * 从数据库配置更新 buffer 的当前 ID 值、最大 ID 值和步长。当第三次及以后调用，
+     * 会有更新时间戳，使用当前时间减去更新时间戳，来动态调整步长 step，即增加或减少
+     * 发号 ID 数，目的是降低数据库的访问频率，因为取号是从数据库取的
      *
      * @param key 业务 key
      * @param segment ID 号段
@@ -200,6 +202,7 @@ public class SegmentIDGenImpl implements IDGen {
         // 获取 buffer
         SegmentBuffer buffer = segment.getBuffer();
         LeafAlloc leafAlloc;
+        // buffer 为 false，表示还没初始化，进行第一次初始化
         if (!buffer.isInitOk()) {
             // 从数据库更新该业务 key 的 maxId
             leafAlloc = dao.updateMaxIdAndGetLeafAlloc(key);
@@ -208,14 +211,15 @@ public class SegmentIDGenImpl implements IDGen {
             // leafAlloc 中的 step 为 DB 中的 step
             buffer.setMinStep(leafAlloc.getStep());
         } else if (buffer.getUpdateTimestamp() == 0) {
-            // 第二次调用 updateSegmentFromDb，即调用另一个 buffer 号段，同上更新该业务 key 的 maxId
+            // buffer 的更新时间戳为 0，表示为第二次调用 updateSegmentFromDb，
+            // 同上更新该业务 key 的 maxId
             leafAlloc = dao.updateMaxIdAndGetLeafAlloc(key);
             // 更新 buffer 当前时间
             buffer.setUpdateTimestamp(System.currentTimeMillis());
             // leafAlloc 中的 step 为 DB 中的 step
             buffer.setMinStep(leafAlloc.getStep());
         } else {
-            // 第三次及之后调用 updateSegmentFromDb，动态调整步长 step，即增加发号 ID 数，
+            // 第三次及之后调用 updateSegmentFromDb，动态调整步长 step，即增加或减少发号 ID 数，
             // 目的是降低数据库的访问频率，因为取号是从数据库取的
             long duration = System.currentTimeMillis() - buffer.getUpdateTimestamp();
             int nextStep = buffer.getStep();
@@ -255,8 +259,14 @@ public class SegmentIDGenImpl implements IDGen {
         sw.stop("updateSegmentFromDb", key + " " + segment);
     }
 
-
+    /**
+     * 发号和准备另一个 buffer，当前 buffer 发号完了，就切换到另一个 buffer 进行发号
+     *
+     * @param buffer
+     * @return
+     */
     public Result getIdFromSegmentBuffer(final SegmentBuffer buffer) {
+        // 使用自旋，当前 buffer 号发完就会切换到另一个 buffer，然后在判断一次，获取 ID 值
         while (true) {
             try {
                 // 读锁
@@ -266,7 +276,7 @@ public class SegmentIDGenImpl implements IDGen {
                 // 如果下面条件满足，则创建另外一个线程配置好另一个 buffer 的当前 ID 值、最大 ID 值和步长
                 // 另一个 buffer 号段没准备好；
                 // 当前 buffer 号段发号已超过 10%；
-                // 使用 CAS，保证只有一个线程异步创建另外一个 buffer，即保证多线程情况下，也只有两个 buffer
+                // 使用 CAS，判断 buffer 是否已经启动另一个线程，false 表示没启动
                 if (!buffer.isNextReady() && (segment.getIdle() < 0.9 * segment.getStep()) && buffer.getThreadRunning().compareAndSet(false, true)) {
                     service.execute(new Runnable() {
                         @Override
@@ -275,7 +285,7 @@ public class SegmentIDGenImpl implements IDGen {
                             Segment next = buffer.getSegments()[buffer.nextPos()];
                             boolean updateOk = false;
                             try {
-                                // 配置 buffer 的当前 ID 值、最大 ID 值和步长
+                                // 从数据库配置更新 buffer 的当前 ID 值、最大 ID 值，以及动态调整步长
                                 updateSegmentFromDb(buffer.getKey(), next);
                                 updateOk = true;
                                 logger.info("update segment {} from db {}", buffer.getKey(), next);
@@ -337,8 +347,8 @@ public class SegmentIDGenImpl implements IDGen {
     }
 
     /**
-     * 配置好另一个 buffer，则为 false，没配置好，则不停地
-     * 循环计数，知道超时报异常
+     * 获取当前 buffer 的 threadRunning 属性，为 true，表示有线程正在配置另一个 buffer，
+     * 则循环计数等待，直到超时异常。为 false，表示已经配置好另个一 buffer。
      * @param buffer 当前发号号段
      */
     private void waitAndSleep(SegmentBuffer buffer) {
