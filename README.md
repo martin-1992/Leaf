@@ -7,8 +7,20 @@
 - 先判断初始化是否成功，在 [SegmentIDGenImpl#init](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23init.md) 方法中初始化包括将数据库中的业务 key 添加到缓存中、删去缓存中没用的业务 key 和创建一个线程定时添加新的业务 key 到缓存中；
 - 判断缓存（多线程下使用 ConcurrentHashMap）是否包含该业务 key，不包含则抛出异常；
 - 使用双重检查锁，检查 SegmentBuffer 是否已用构造函数创建，并进行零值初始化；
+  1. SegmentBuffer 为包含两个 Segment 对象的数组，Segment 对象属性有原子类的 value，用来获取 ID 值。使用 volatile 修饰的最大 ID 值 max，用于当前 ID 值是否小于最大 ID 值。step 为步长，当前最大 ID 值 max 减去 step 步长，即为初始的 ID 值；
+  2. SegmentBuffer 的 currentPos 属性指向下个 buffer，切换时使用 (currentPos + 1) % 2；
 - 调用 [updateSegmentFromDb](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23updateSegmentFromDb.md)，从数据库配置更新 buffer 的当前 ID 值、最大 ID 值，以及动态调整步长；
-- 调用 [getIdFromSegmentBuffer](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23getIdFromSegmentBuffer.md)，发号和准备另一个 buffer，当前 buffer 发号完了，就切换到另一个 buffer 进行发号。
+  1. 假设数据库初始状态，maxId=0，step=1000，
+  2. 机器 A 和机器 B 要获取同个业务 key 的 ID（业务 key 缓存在本地），同个业务 key 获取 ID 的服务需要先获取锁（synchronized (buffer)），然后机器 B 抢到了锁；
+  3. 机器 B 会检查本机号段 buffer 是否更新，没更新先让数据库更新，即 maxId += step = 1000，则机器 B 的 maxId=1000，step=1000，初始发号 ID 值为 maxId-step=0，所以从 0 发起；
+  4. 当机器 B 的 buffer 配置好后，会解锁。然后机器 A 获取锁，也是重复上面流程，先从数据库更新 maxId += step，maxId 为 2000。机器 A 在从数据库中获取到的 maxId 为 2000，当前发号的初始 ID 值为 maxId-step=2000-1000=1000，即从 1000 开始发起。
+- 调用 [getIdFromSegmentBuffer](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23getIdFromSegmentBuffer.md)，当本机 buffer 从数据库中获取到发号配置后，进行发放 ID 和准备另一个 buffer。当前 buffer 发号完了，就切换到另一个 buffer 进行发号。
+  1. 自旋操作（while true），当前业务 key 上读锁，表示多个线程可进行读取；
+  2. 接着判断当前 buffer 是否发号超过 10%（id、maxId、step 都用 volatile 修饰，保证了多线程下的可见性），且另一个 buffer（volatile 修饰） 没准备好，则使用 CAS 启动另外一个线程加载另外一个 buffer，还是调用 [updateSegmentFromDb](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23updateSegmentFromDb.md) 方法，从数据库加载配置到本地；
+  3. 同时继续发号，发号 ID 为原子类 AtomicInteger，对于简单的加一操作，使用锁来操作太笨重，线程切换消耗的时间可能大于 CAS 操作（无锁，加一操作失败，则自旋重试，直到完成加一操作）。发号 ID 自增完成后，检查是否超过最大 ID，没有则发出 ID 号（成功），解除读锁；
+  4. 如果当前 ID 值大于最大 ID 值，表示发号完了，先判断 buffer 的另外一个线程是否已配置好另一个 buffer，会使用计数等待一段时间，再规定时间没配置好，则超时；
+  5. 上写锁，用于切换 buffer。先判断 buffer 的发号 id 是不是大于 maxId（多线程情况下，可能已经切换到另外一个 buffer），是则进行切换，不是则直接发号；
+  6. 使用 (currentPos + 1) % 2 切换 buffer，currentPos 为指向当前 buffer 的指针，最后解掉写锁。
 
 ![avatar](/notes/photo_2.png)
 
