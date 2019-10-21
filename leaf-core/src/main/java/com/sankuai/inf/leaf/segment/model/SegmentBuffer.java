@@ -68,7 +68,8 @@ public class SegmentBuffer {
         // buffer 的号码发完，就会调用另外一个 buffer 来发号，保证
         // 有一个 buffer 准备好发号
         segments = new Segment[]{new Segment(this), new Segment(this)};
-        // 指向 buffer 的指针，0 或 1，因为只有两个 buffer
+        // 指向 buffer 的指针，0 或 1，注意切换是 currentPos+1，然后对
+        // 其取余，即 (currentPos + 1) % 2，可见 nextPos() 方法
         currentPos = 0;
         // 创建线程，异步调用另一个 buffer，是否已从数据库配置好，可进行发号
         nextReady = false;

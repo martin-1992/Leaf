@@ -84,7 +84,7 @@ public class SegmentIDGenImpl implements IDGen {
         // 这时才算初始化成功
         updateCacheFromDb();
         initOK = true;
-        // 创建一个线程，每隔 60 秒执行 updateCacheFromDb，将数据库新加的 key 添加到缓存中
+        // 创建一个线程，每隔 60 秒执行 updateCacheFromDb，将数据库新加业务的 key 添加到缓存中
         updateCacheFromDbAtEveryMinute();
         return initOK;
     }
@@ -143,7 +143,7 @@ public class SegmentIDGenImpl implements IDGen {
                 cache.put(tag, buffer);
                 logger.info("Add tag {} from db to IdCache, SegmentBuffer {}", tag, buffer);
             }
-            // cache中已失效的 tags 从 cache 删除，遍历 dbTags，将不
+            // cache 中已失效的 tags 从 cache 删除，遍历 dbTags，将不
             // 存在于数据库中 的 tag 从缓存中移除
             removeTags.removeAll(dbTags);
             for (String tag : removeTags) {
@@ -166,9 +166,11 @@ public class SegmentIDGenImpl implements IDGen {
         }
         // 如果该缓存包含业务 key
         if (cache.containsKey(key)) {
+            // cache 为全局变量，从 cache 获取 key 不为局部变量
             SegmentBuffer buffer = cache.get(key);
             // 使用双重检查锁，检查 SegmentBuffer 是否已用构造函数创建，并进行零值初始化
             if (!buffer.isInitOk()) {
+                // 同个业务 key 获取 ID 的服务需要先获取锁
                 synchronized (buffer) {
                     if (!buffer.isInitOk()) {
                         try {
@@ -269,13 +271,13 @@ public class SegmentIDGenImpl implements IDGen {
         // 使用自旋，当前 buffer 号发完就会切换到另一个 buffer，然后在判断一次，获取 ID 值
         while (true) {
             try {
-                // 读锁
+                // 读锁，多个线程能进行读操作
                 buffer.rLock().lock();
                 // 获取当前 Segment，判断另外一个 buffer 是否准备好
                 final Segment segment = buffer.getCurrent();
                 // 如果下面条件满足，则创建另外一个线程配置好另一个 buffer 的当前 ID 值、最大 ID 值和步长
                 // 另一个 buffer 号段没准备好；
-                // 当前 buffer 号段发号已超过 10%；
+                // 当前 buffer 号段发号已超过 10%，这里 id、maxId、step 都用 volatile 修饰，保证可见性；
                 // 使用 CAS，判断 buffer 是否已经启动另一个线程，false 表示没启动
                 if (!buffer.isNextReady() && (segment.getIdle() < 0.9 * segment.getStep()) && buffer.getThreadRunning().compareAndSet(false, true)) {
                     service.execute(new Runnable() {
@@ -317,7 +319,7 @@ public class SegmentIDGenImpl implements IDGen {
             } finally {
                 buffer.rLock().unlock();
             }
-            // 当发号完了，先判断 buffer 的另外一个线程是否已配置好另一个 buffer
+            // 如果当前 ID 值大于最大 ID 值，表示发号完了，先判断 buffer 的另外一个线程是否已配置好另一个 buffer
             waitAndSleep(buffer);
             try {
                 // 当前 buffer 上写锁，因为当前 buffer 号段发完了，于是要切换另一个 buffer
@@ -333,10 +335,11 @@ public class SegmentIDGenImpl implements IDGen {
                 // 另一个 buffer 已准备好，将指向当前 buffer
                 // 的指针改为指向另一个 buffer 的指针
                 if (buffer.isNextReady()) {
+                    // (currentPos + 1) % 2
                     buffer.switchPos();
                     buffer.setNextReady(false);
                 } else {
-                    // 另外一个 buffer 没准备好，则报异常
+                    // 另外一个 buffer 没准备好，则报异常，包括前面的 waitAndSleep 超时
                     logger.error("Both two segments in {} are not ready!", buffer);
                     return new Result(EXCEPTION_ID_TWO_SEGMENTS_ARE_NULL, Status.EXCEPTION);
                 }
@@ -355,7 +358,7 @@ public class SegmentIDGenImpl implements IDGen {
         int roll = 0;
         while (buffer.getThreadRunning().get()) {
             roll += 1;
-            if(roll > 10000) {
+            if (roll > 10000) {
                 try {
                     TimeUnit.MILLISECONDS.sleep(10);
                     break;

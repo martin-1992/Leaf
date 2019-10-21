@@ -75,7 +75,8 @@ public class SnowflakeZookeeperHolder {
             // 基于 Apache Curator 框架的 ZooKeeper 的介绍 https://www.zifangsky.cn/1166.html
             // new RetryUntilElapsed(1000, 4)，调用默认的重试策略，重试的时间超过最大重试时间 1000 就不再重试，否则间隔 4 进行重试
             // 基于配置信息，创建连接实例
-            CuratorFramework curator = createWithOptions(connectionString, new RetryUntilElapsed(1000, 4), 10000, 6000);
+            CuratorFramework curator = createWithOptions(connectionString, new RetryUntilElapsed(1000,
+                    4), 10000, 6000);
             curator.start();
             // 检查根节点 forever 是否存在
             Stat stat = curator.checkExists().forPath(PATH_FOREVER);
@@ -83,7 +84,7 @@ public class SnowflakeZookeeperHolder {
                 // 不存在根节点,机器第一次启动,创建 /snowflake/ip:port-000000000,并上传数据
                 // 创建持久顺序节点 ,并把节点数据放入 value
                 zk_AddressNode = createNode(curator);
-                // worker id 默认是 0
+                // worker id 默认是 0，第一次创建根节点和子节点
                 updateLocalWorkerID(workerID);
                 // 定时上报本机时间给 forever 节点
                 ScheduledUploadData(curator, zk_AddressNode);

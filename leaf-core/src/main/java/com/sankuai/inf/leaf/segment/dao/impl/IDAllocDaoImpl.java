@@ -49,7 +49,7 @@ public class IDAllocDaoImpl implements IDAllocDao {
     }
 
     /**
-     * 1. 从数据库更新该业务 tag 的 maxId；
+     * 1. 从数据库更新该业务 tag 的 maxId，即 maxId + step；
      * 2. 再从数据库查询该 tag 的结果，将查询结果封装成对象 LeafAlloc，为数据库表的实体类；
      * 3. 封装成功，提交事务，返回封装对象。
      *
