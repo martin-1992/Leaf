@@ -35,7 +35,7 @@
     2. 没则创建父节点 leaf_forever，同时在父节点下创建一个临时顺序节点 workerId（ID 号是顺序生成的），为本次连接的 leaf-snowflake 所属 ID 号，将 workerId 持久化到本地，重启时可直接获取；
     3. 有创建父节点的情况下，则先获取该父节点下的所有子节点存储到 Map 中，然后根据该 leaf-snowflake 服务的监听地址，判断 map 中是否也有注册的 workerId，有则取回该 workerId，启动服务。没则在父节点下创建一个临时顺序节点 workerId，启动服务。
 
-![avatar](photo_4.png)
+![avatar](/notes/photo_4.png)
 
 #### [解决机器时间回拨问题](https://github.com/martin-1992/Leaf/blob/master/notes/snowflake/%E8%A7%A3%E5%86%B3%E6%9C%BA%E5%99%A8%E6%97%B6%E9%97%B4%E5%9B%9E%E6%8B%A8%E9%97%AE%E9%A2%98.md)
 　　snowflake 算法的第 2- 42 位为相对时间戳，依赖时间来产生 ID 的，如果机器时间发生回拨，则可能会发出重复的 ID 号，所以在发 ID 号前需检查机器时间有没回拨，有三种检查：
