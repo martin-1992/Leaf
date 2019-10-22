@@ -43,7 +43,17 @@
 - 如果是新服务节点，直接创建持久节点 leaf_forever/{self} 并写入自身系统时间，接下来综合对比其余 Leaf 节点的系统时间来判断自身系统时间是否准确，具体做法是取 leaf_temporary 下的所有临时节点（所有运行中的 Leaf-snowflake 节点）的服务 IP：Port，然后通过 RPC 请求得到所有节点的系统时间，计算 sum(time)/ nodeSize（注意，这段来自[美团的原文](https://tech.meituan.com/2017/04/21/mt-leaf.html)，在代码里没找到该实现方法）。
     1. 若 abs ( 系统时间 - sum(time) / nodeSize ) < 阈值，认为当前系统时间准确，正常启动服务，同时写临时节点 leaf_temporary/{self} 维持租约；
     2. 否则认为本机系统时间发生大步长偏移，启动失败并报警。
-
+ 
+ ### 微服务方式
+ 
+ - 将 leaf-core 打包成服务，部署到多台机器；
+ - 连接 ZooKeeper，将各自服务注册到 ZooKeeper 集群上；
+ - 消费者连接 ZooKeeper 集群，获取对应的提供服务列表；
+ - 然后消费者根据负载均衡策略，连接一个 IP，获取服务。
+ 
+ ![avatar](/notes/photo_3.png)
+ 
+ 　　注意，即使 ZooKeeper 挂掉了，消费者一样可以获取服务，因为消费者已缓存提供服务的列表。ZooKeeper 有心跳检测，当提供者的机器挂掉，会更新提供服务的列表，并推给各消费者。如果 ZooKeeper 挂了，且提供者的机器挂了，消费者才会获取不到服务。ZooKeeper 一般是以集群方式存在，不容易挂掉。
 
 ### reference
 
