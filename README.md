@@ -22,7 +22,11 @@
   3. 同时继续发号，发号 ID 为原子类 AtomicInteger，对于简单的加一操作，使用锁来操作太笨重，线程切换消耗的时间可能大于 CAS 操作（无锁，加一操作失败，则自旋重试，直到完成加一操作）。发号 ID 自增完成后，检查是否超过最大 ID，没有则发出 ID 号（成功），解除读锁；
   4. 如果当前 ID 值大于最大 ID 值，表示发号完了，先判断 buffer 的另外一个线程是否已配置好另一个 buffer，会使用计数等待一段时间，再规定时间没配置好，则超时；
   5. 上写锁，用于切换 buffer。先判断 buffer 的发号 id 是不是大于 maxId（多线程情况下，可能已经切换到另外一个 buffer），是则进行切换，不是则直接发号；
-  6. 使用 (currentPos + 1) % 2 切换 buffer，currentPos 为指向当前 buffer 的指针，最后解掉写锁。
+  6. 使用 (currentPos + 1) % 2 切换 buffer，currentPos 为指向当前 buffer 的指针，最后解掉写锁；
+  7. 在第三次及以后调用 [updateSegmentFromDb](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23updateSegmentFromDb.md) 会根据发完一个 buffer 的 ID 号耗时时长来动态调整 step，即本次获取的 ID 号。当前时间减去上次 buffer 的更新时间，即为上次 buffer 发号完的耗时。
+    1. 默认 15 分钟，少于 15 分钟，但大于最低 1000 秒，则将步长 step * 2；
+    2. 15 ~ 30 分钟，不用调整步长 step；
+    3. 大于 30 分钟，步长 step 减少一半。
 
 ![avatar](/notes/photo_1.png)
 
