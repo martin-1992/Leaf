@@ -3,6 +3,8 @@
 
 ### [号段模式](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/README.md)
 　　低位趋势增长，高可用，采用从数据库获取发号的起始 ID 值、最大 ID 值，发号是在本机进行，即使数据库宕机，也能保证一段时间内正常发号，ID 可计算，不适用于订单 ID 生成场景。
+
+![avatar](/notes/photo_2.png)
   
 - 先判断初始化是否成功，在 [SegmentIDGenImpl#init](https://github.com/martin-1992/Leaf/blob/master/notes/%E5%8F%B7%E6%AE%B5%E6%A8%A1%E5%BC%8F/SegmentIDGenImpl%23init.md) 方法中初始化包括将数据库中的业务 key 添加到缓存中、删去缓存中没用的业务 key 和创建一个线程定时添加新的业务 key 到缓存中；
 - 判断缓存（多线程下使用 ConcurrentHashMap）是否包含该业务 key，不包含则抛出异常；
@@ -22,7 +24,7 @@
   5. 上写锁，用于切换 buffer。先判断 buffer 的发号 id 是不是大于 maxId（多线程情况下，可能已经切换到另外一个 buffer），是则进行切换，不是则直接发号；
   6. 使用 (currentPos + 1) % 2 切换 buffer，currentPos 为指向当前 buffer 的指针，最后解掉写锁。
 
-![avatar](/notes/photo_2.png)
+![avatar](/notes/photo_1.png)
 
 ### [snowflake 模式](https://github.com/martin-1992/Leaf/blob/master/notes/snowflake/README.md)
 　　完全分布式，ID 不可计算，可适用于订单 ID 生成场景。<br />
@@ -32,8 +34,6 @@
     1. 每当 leaf-snowflake 服务启动后，都会创建一个 zookeeper 连接实例，连接到 zookeeper，然后先检查 zookeeper 的根节点是否创建；
     2. 没则创建父节点 leaf_forever，同时在父节点下创建一个永久顺序节点 workerId（ID 号是顺序生成的），为本次连接的 leaf-snowflake 所属 ID 号，将 workerId 持久化到本地，重启时可直接获取；
     3. 有创建父节点的情况下，则先获取该父节点下的所有子节点存储到 Map 中，然后根据该 leaf-snowflake 服务的监听地址，判断 map 中是否也有注册的 workerId，有则取回该 workerId，启动服务。没则在父节点下创建一个永久顺序节点 workerId，启动服务。
-
-![avatar](/notes/photo_1.png)
 
 #### [解决机器时间回拨问题](https://github.com/martin-1992/Leaf/blob/master/notes/snowflake/%E8%A7%A3%E5%86%B3%E6%9C%BA%E5%99%A8%E6%97%B6%E9%97%B4%E5%9B%9E%E6%8B%A8%E9%97%AE%E9%A2%98.md)
 　　snowflake 算法的第 2- 42 位为相对时间戳，依赖时间来产生 ID 的，如果机器时间发生回拨，则可能会发出重复的 ID 号，所以在发 ID 号前需检查机器时间有没回拨，有三种检查：
