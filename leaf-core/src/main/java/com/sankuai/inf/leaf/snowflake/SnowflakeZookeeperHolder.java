@@ -73,8 +73,8 @@ public class SnowflakeZookeeperHolder {
     public boolean init() {
         try {
             // 基于 Apache Curator 框架的 ZooKeeper 的介绍 https://www.zifangsky.cn/1166.html
-            // new RetryUntilElapsed(1000, 4)，调用默认的重试策略，重试的时间超过最大重试时间 1000 就不再重试，否则间隔 4 进行重试
-            // 基于配置信息，创建连接实例
+            // new RetryUntilElapsed(1000, 4)，调用默认的重试策略，重试的时间超过最大重试时间 1000 就不再重试，
+            // 否则间隔 4 进行重试基于配置信息，创建连接实例
             CuratorFramework curator = createWithOptions(connectionString, new RetryUntilElapsed(1000,
                     4), 10000, 6000);
             curator.start();
@@ -82,7 +82,7 @@ public class SnowflakeZookeeperHolder {
             Stat stat = curator.checkExists().forPath(PATH_FOREVER);
             if (stat == null) {
                 // 不存在根节点,机器第一次启动,创建 /snowflake/ip:port-000000000,并上传数据
-                // 创建持久顺序节点 ,并把节点数据放入 value
+                // 创建临时顺序节点 ,并把节点数据放入 value
                 zk_AddressNode = createNode(curator);
                 // worker id 默认是 0，第一次创建根节点和子节点
                 updateLocalWorkerID(workerID);
@@ -123,12 +123,12 @@ public class SnowflakeZookeeperHolder {
                     updateLocalWorkerID(workerID);
                     LOGGER.info("[Old NODE]find forever node have this endpoint ip-{} port-{} workid-{} childnode and start SUCCESS", ip, port, workerID);
                 } else {
-                    //表示新启动的节点,创建持久节点 ,不用check时间
+                    //表示新启动的节点,创建临时顺序节点 ,不用check时间
                     String newNode = createNode(curator);
                     zk_AddressNode = newNode;
                     String[] nodeKey = newNode.split("-");
                     workerID = Integer.parseInt(nodeKey[1]);
-                    // 创建永久节点
+                    // 定时上报机器时间
                     doService(curator);
                     // 持久化 workderId
                     updateLocalWorkerID(workerID);
@@ -196,7 +196,7 @@ public class SnowflakeZookeeperHolder {
     }
 
     /**
-     * 创建持久顺序节点 ,并把节点数据放入 value
+     * 创建临时顺序节点 ,并把节点数据放入 value
      *
      * @param curator
      * @return
