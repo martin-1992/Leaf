@@ -61,7 +61,7 @@
 　　完全分布式，ID 不可计算，可适用于订单 ID 生成场景。<br />
 
 - 创建对象 SnowflakeZookeeperHolder，包含 IP、端口、zookeeper 地址；
-- 核心是调用该对象 SnowflakeZookeeperHolder 的初始化 init 方法，获取 workerId，因为 snowflake 的 ID 是由时间戳 + 工作机器 ID（workerId）+ 序列号组成的；
+- 核心是调用该对象 SnowflakeZookeeperHolder 的初始化 init 方法，获取 workerId，因为 snowflake 的 ID 是由时间戳 + 工作机器 ID（workerId）+ 序列号组成的。第一位是符号位，为 0 表示正数；
     1. 每当 leaf-snowflake 服务启动后，都会创建一个 zookeeper 连接实例，连接到 zookeeper，然后先检查 zookeeper 的根节点是否创建；
     2. 没则创建父节点 leaf_forever，同时在父节点下创建一个临时顺序节点 workerId（ID 号是顺序生成的），为本次连接的 leaf-snowflake 所属 ID 号，将 workerId 持久化到本地，重启时可直接获取；
     3. 有创建父节点的情况下，则先获取该父节点下的所有子节点存储到 Map 中，然后根据该 leaf-snowflake 服务的监听地址，判断 map 中是否也有注册的 workerId，有则取回该 workerId，启动服务。没则在父节点下创建一个临时顺序节点 workerId，启动服务。
@@ -92,7 +92,7 @@
  　　注意，即使 ZooKeeper 挂掉了，消费者一样可以获取服务，因为消费者已缓存提供服务的列表。ZooKeeper 有心跳检测，当提供者的机器挂掉，会更新提供服务的列表，并推给各消费者。如果 ZooKeeper 挂了，且提供者的机器挂了，消费者才会获取不到服务。ZooKeeper 一般是以集群方式存在，不容易挂掉。
 
 #### 本机部署
- 　　即写在业务代码中，比如写成工具类 utils，然后直接调用，省去一次网络调用，但需要预留更多的机器 ID 位置。
+ 　　即写在业务代码中，比如写成工具类，然后直接调用，省去一次网络调用，但需要预留更多的机器 ID 位置。
 
 #### 注意事项
  　　如果发号服务的 QPS 不高，比如发号服务每毫秒只发一个 ID，这样生成的 ID 末位就都是 1。分库分表使用该 ID 进行一致性哈希时，会造成分库分表的不均匀。解决方案：
